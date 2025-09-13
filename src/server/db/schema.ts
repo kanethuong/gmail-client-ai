@@ -13,6 +13,26 @@ import {
   bigint,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+// Example model schema from the Drizzle docs
+// https://orm.drizzle.team/docs/sql-schema-declaration
+
+import { sql } from "drizzle-orm";
+import { pgTableCreator } from "drizzle-orm/pg-core";
+
+export const createTable = pgTableCreator((name) => `gmail-client-ai_${name}`);
+
+export const posts = createTable(
+  "post",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    name: d.varchar({ length: 256 }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [index("name_idx").on(t.name)],
+);
 
 // Users table: Stores user information and OAuth credentials for Gmail access
 export const users = pgTable(
@@ -64,11 +84,11 @@ export const threads = pgTable(
   "threads",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    gmailThreadId: bigint("gmail_thread_id", { mode: 'number' }).notNull(), // Gmail's numeric thread ID (as bigint for large values)
+    gmailThreadId: bigint("gmail_thread_id", { mode: "number" }).notNull(), // Gmail's numeric thread ID (as bigint for large values)
     userId: integer("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    historyId: bigint("history_id", { mode: 'number' }), // For sync tracking (Gmail history ID)
+    historyId: bigint("history_id", { mode: "number" }), // For sync tracking (Gmail history ID)
     snippet: text("snippet"),
     lastMessageDate: timestamp("last_message_date").notNull(),
     isUnread: boolean("is_unread").default(false).notNull(),
@@ -78,34 +98,38 @@ export const threads = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [{
-    userThreadIdIdx: uniqueIndex("threads_user_thread_id_idx").on(
-      table.userId,
-      table.gmailThreadId,
-    ),
-    lastMessageDateIdx: index("threads_last_message_date_idx").on(
-      table.lastMessageDate,
-    ), // For sorting/infinite scroll
-    unreadIdx: index("threads_unread_idx").on(table.isUnread),
-  }],
+  (table) => [
+    {
+      userThreadIdIdx: uniqueIndex("threads_user_thread_id_idx").on(
+        table.userId,
+        table.gmailThreadId,
+      ),
+      lastMessageDateIdx: index("threads_last_message_date_idx").on(
+        table.lastMessageDate,
+      ), // For sorting/infinite scroll
+      unreadIdx: index("threads_unread_idx").on(table.isUnread),
+    },
+  ],
 );
 
 // Thread Labels junction table: Many-to-many between threads and labels
 export const threadLabels = pgTable(
   "thread_labels",
   {
-    threadId: bigint("thread_id", { mode: 'number' })
+    threadId: bigint("thread_id", { mode: "number" })
       .references(() => threads.id, { onDelete: "cascade" })
       .notNull(),
     labelId: integer("label_id")
       .references(() => labels.id, { onDelete: "cascade" })
       .notNull(),
   },
-  (table) => [{
-    pk: primaryKey({ columns: [table.threadId, table.labelId] }),
-    threadIdx: index("thread_labels_thread_idx").on(table.threadId),
-    labelIdx: index("thread_labels_label_idx").on(table.labelId),
-  }],
+  (table) => [
+    {
+      pk: primaryKey({ columns: [table.threadId, table.labelId] }),
+      threadIdx: index("thread_labels_thread_idx").on(table.threadId),
+      labelIdx: index("thread_labels_label_idx").on(table.labelId),
+    },
+  ],
 );
 
 // Messages table: Stores individual message metadata (body HTML and attachments in S3)
@@ -114,7 +138,7 @@ export const messages = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     gmailMessageId: text("gmail_message_id").notNull(), // Gmail's string message ID
-    threadId: bigint("thread_id", { mode: 'number' })
+    threadId: bigint("thread_id", { mode: "number" })
       .references(() => threads.id, { onDelete: "cascade" })
       .notNull(),
     from: text("from").notNull(),
@@ -132,16 +156,18 @@ export const messages = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (table) => [{
-    threadMessageIdIdx: uniqueIndex("messages_thread_message_id_idx").on(
-      table.threadId,
-      table.gmailMessageId,
-    ),
-    subjectIdx: index("messages_subject_idx").on(table.subject), // For search
-    fromIdx: index("messages_from_idx").on(table.from), // For search
-    snippetIdx: index("messages_snippet_idx").on(table.snippet), // For search
-    dateIdx: index("messages_date_idx").on(table.date), // For sorting
-  }],
+  (table) => [
+    {
+      threadMessageIdIdx: uniqueIndex("messages_thread_message_id_idx").on(
+        table.threadId,
+        table.gmailMessageId,
+      ),
+      subjectIdx: index("messages_subject_idx").on(table.subject), // For search
+      fromIdx: index("messages_from_idx").on(table.from), // For search
+      snippetIdx: index("messages_snippet_idx").on(table.snippet), // For search
+      dateIdx: index("messages_date_idx").on(table.date), // For sorting
+    },
+  ],
 );
 
 // Attachments table: Stores attachment metadata (files in S3)
@@ -149,7 +175,7 @@ export const attachments = pgTable(
   "attachments",
   {
     id: serial("id").primaryKey(),
-    messageId: bigint("message_id", { mode: 'number' })
+    messageId: bigint("message_id", { mode: "number" })
       .references(() => messages.id, { onDelete: "cascade" })
       .notNull(),
     gmailAttachmentId: text("gmail_attachment_id").notNull(),
@@ -160,12 +186,14 @@ export const attachments = pgTable(
     inline: boolean("inline").default(false).notNull(), // Whether to display inline
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [{
-    messageAttachmentIdIdx: uniqueIndex(
-      "attachments_message_attachment_id_idx",
-    ).on(table.messageId, table.gmailAttachmentId),
-    filenameIdx: index("attachments_filename_idx").on(table.filename),
-  }],
+  (table) => [
+    {
+      messageAttachmentIdIdx: uniqueIndex(
+        "attachments_message_attachment_id_idx",
+      ).on(table.messageId, table.gmailAttachmentId),
+      filenameIdx: index("attachments_filename_idx").on(table.filename),
+    },
+  ],
 );
 
 // Drafts table: For unsent drafts composed in the app (before sending via Gmail API)
@@ -174,9 +202,12 @@ export const drafts = pgTable("drafts", {
   userId: integer("user_id")
     .references(() => users.id, { onDelete: "cascade" })
     .notNull(),
-  threadId: bigint("thread_id", { mode: 'number' }).references(() => threads.id, {
-    onDelete: "set null",
-  }), // Optional, for replies/forwards
+  threadId: bigint("thread_id", { mode: "number" }).references(
+    () => threads.id,
+    {
+      onDelete: "set null",
+    },
+  ), // Optional, for replies/forwards
   subject: text("subject"),
   body: text("body"), // Plain text or HTML draft body (since not sent yet, store locally)
   to: text("to"),

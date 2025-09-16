@@ -13,26 +13,7 @@ import {
   bigint,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-// Example model schema from the Drizzle docs
-// https://orm.drizzle.team/docs/sql-schema-declaration
-
 import { sql } from "drizzle-orm";
-import { pgTableCreator } from "drizzle-orm/pg-core";
-
-export const createTable = pgTableCreator((name) => `gmail-client-ai_${name}`);
-
-export const posts = createTable(
-  "post",
-  (d) => ({
-    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
-    name: d.varchar({ length: 256 }),
-    createdAt: d
-      .timestamp({ withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
-  }),
-  (t) => [index("name_idx").on(t.name)],
-);
 
 // Users table: Stores user information and OAuth credentials for Gmail access
 export const users = pgTable(
@@ -41,9 +22,9 @@ export const users = pgTable(
     id: serial("id").primaryKey(),
     email: text("email").notNull().unique(),
     name: text("name"),
-    oauthAccessToken: text("oauth_access_token").notNull(),
-    oauthRefreshToken: text("oauth_refresh_token").notNull(),
-    oauthTokenExpiry: timestamp("oauth_token_expiry").notNull(),
+    oauthAccessToken: text("oauth_access_token"), // Made nullable for users who haven't completed OAuth
+    oauthRefreshToken: text("oauth_refresh_token"), // Made nullable
+    oauthTokenExpiry: timestamp("oauth_token_expiry"), // Made nullable
     lastSyncAt: timestamp("last_sync_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -84,11 +65,11 @@ export const threads = pgTable(
   "threads",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    gmailThreadId: bigint("gmail_thread_id", { mode: "number" }).notNull(), // Gmail's numeric thread ID (as bigint for large values)
+    gmailThreadId: text("gmail_thread_id").notNull(), // Changed to text - Gmail thread IDs are strings
     userId: integer("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    historyId: bigint("history_id", { mode: "number" }), // For sync tracking (Gmail history ID)
+    historyId: text("history_id"), // Changed to text - Gmail history IDs are strings
     snippet: text("snippet"),
     lastMessageDate: timestamp("last_message_date").notNull(),
     isUnread: boolean("is_unread").default(false).notNull(),
@@ -106,7 +87,7 @@ export const threads = pgTable(
       ),
       lastMessageDateIdx: index("threads_last_message_date_idx").on(
         table.lastMessageDate,
-      ), // For sorting/infinite scroll
+      ),
       unreadIdx: index("threads_unread_idx").on(table.isUnread),
     },
   ],
@@ -162,10 +143,10 @@ export const messages = pgTable(
         table.threadId,
         table.gmailMessageId,
       ),
-      subjectIdx: index("messages_subject_idx").on(table.subject), // For search
-      fromIdx: index("messages_from_idx").on(table.from), // For search
-      snippetIdx: index("messages_snippet_idx").on(table.snippet), // For search
-      dateIdx: index("messages_date_idx").on(table.date), // For sorting
+      subjectIdx: index("messages_subject_idx").on(table.subject),
+      fromIdx: index("messages_from_idx").on(table.from),
+      snippetIdx: index("messages_snippet_idx").on(table.snippet),
+      dateIdx: index("messages_date_idx").on(table.date),
     },
   ],
 );
@@ -288,10 +269,3 @@ export const draftsRelations = relations(drafts, ({ one }) => ({
 export const syncLogsRelations = relations(syncLogs, ({ one }) => ({
   user: one(users, { fields: [syncLogs.userId], references: [users.id] }),
 }));
-
-// Additional Notes:
-// - Use PostgreSQL full-text search extensions for advanced search (e.g., on subject/from/snippet). You can add tsvector columns if needed.
-// - For performance with large thread lists (10k+), ensure indexes on lastMessageDate, labels via junction, and use cursor-based pagination in queries.
-// - Bigint for thread/message IDs to handle Gmail's large numeric IDs.
-// - JSONB for headers and draft attachments for flexibility.
-// - Sync via cron: Update lastSyncAt on users and use historyId for incremental syncs.

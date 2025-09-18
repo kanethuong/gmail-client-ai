@@ -1,6 +1,6 @@
 import { db } from '~/server/db';
 import { users, labels, threads, messages, attachments, threadLabels, syncLogs } from '~/server/db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, lt } from 'drizzle-orm';
 import { GmailApiService } from '~/lib/gmail-api';
 import { S3Service } from '~/lib/s3-service';
 
@@ -26,7 +26,8 @@ export class GmailSyncService {
    */
   async syncUser(userId: number): Promise<SyncResult> {
     const syncLogId = await this.startSyncLog(userId, 'full');
-    
+    const syncStartTime = new Date();
+
     try {
       // Get user from database
       const user = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -39,7 +40,7 @@ export class GmailSyncService {
 
       // Get all threads from Gmail
       const gmailThreads = await this.gmailApi.getAllThreads(1000); // Start with 1000 threads
-      
+
       let threadsSynced = 0;
       let messagesSynced = 0;
       let attachmentsSynced = 0;
@@ -47,7 +48,7 @@ export class GmailSyncService {
       // Process each thread
       for (const gmailThread of gmailThreads) {
         try {
-          const threadResult = await this.syncThread(userId, gmailThread);
+          const threadResult = await this.syncThread(userId, gmailThread, syncStartTime);
           threadsSynced += threadResult.threadsSynced;
           messagesSynced += threadResult.messagesSynced;
           attachmentsSynced += threadResult.attachmentsSynced;
@@ -56,6 +57,10 @@ export class GmailSyncService {
           // Continue with other threads
         }
       }
+
+      // Clean up deleted threads (threads not seen in this sync)
+      const deletedThreadsCount = await this.cleanupDeletedThreads(userId, syncStartTime);
+      console.log(`Cleaned up ${deletedThreadsCount} deleted threads`);
 
       // Update user's last sync time
       await db.update(users)
@@ -74,7 +79,7 @@ export class GmailSyncService {
       console.error('Sync failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       await this.completeSyncLog(syncLogId, 'failed', 0, 0, errorMessage);
-      
+
       return {
         success: false,
         threadsSynced: 0,
@@ -121,7 +126,7 @@ export class GmailSyncService {
   /**
    * Sync a single thread
    */
-  private async syncThread(userId: number, gmailThread: any): Promise<SyncResult> {
+  private async syncThread(userId: number, gmailThread: any, syncStartTime: Date): Promise<SyncResult> {
     let threadsSynced = 0;
     let messagesSynced = 0;
     let attachmentsSynced = 0;
@@ -149,18 +154,19 @@ export class GmailSyncService {
           historyId: gmailThread.historyId,
           snippet: gmailThread.snippet,
           lastMessageDate,
-          isUnread: gmailThread.messages.some((msg: any) => 
+          isUnread: gmailThread.messages.some((msg: any) =>
             msg.labelIds?.includes('UNREAD')
           ),
-          isStarred: gmailThread.messages.some((msg: any) => 
+          isStarred: gmailThread.messages.some((msg: any) =>
             msg.labelIds?.includes('STARRED')
           ),
-          isImportant: gmailThread.messages.some((msg: any) => 
+          isImportant: gmailThread.messages.some((msg: any) =>
             msg.labelIds?.includes('IMPORTANT')
           ),
-          isDraft: gmailThread.messages.some((msg: any) => 
+          isDraft: gmailThread.messages.some((msg: any) =>
             msg.labelIds?.includes('DRAFT')
           ),
+          lastSeenAt: syncStartTime,
         }).returning();
 
         threadId = newThread!.id;
@@ -170,6 +176,11 @@ export class GmailSyncService {
         await this.syncThreadLabels(threadId, gmailThread.messages);
       } else {
         threadId = existingThread[0]!.id;
+
+        // Update lastSeenAt for existing thread
+        await db.update(threads)
+          .set({ lastSeenAt: syncStartTime })
+          .where(eq(threads.id, threadId));
       }
 
       // Sync messages in this thread
@@ -336,6 +347,40 @@ export class GmailSyncService {
       };
     } catch (error) {
       console.error(`Error syncing message ${gmailMessage.id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up threads that were deleted from Gmail
+   * Deletes threads that were not seen in the current sync (lastSeenAt < syncStartTime)
+   */
+  private async cleanupDeletedThreads(userId: number, syncStartTime: Date): Promise<number> {
+    try {
+      // Find threads that weren't seen in this sync (deleted from Gmail)
+      const deletedThreads = await db.select({ id: threads.id })
+        .from(threads)
+        .where(
+          and(
+            eq(threads.userId, userId),
+            lt(threads.lastSeenAt, syncStartTime)
+          )
+        );
+
+      if (deletedThreads.length > 0) {
+        const threadIds = deletedThreads.map(t => t.id);
+
+        // Delete the threads (cascading deletes will handle messages, attachments, etc.)
+        await db.delete(threads)
+          .where(inArray(threads.id, threadIds));
+
+        console.log(`Deleted ${deletedThreads.length} threads that were removed from Gmail`);
+        return deletedThreads.length;
+      }
+
+      return 0;
+    } catch (error) {
+      console.error('Error cleaning up deleted threads:', error);
       throw error;
     }
   }

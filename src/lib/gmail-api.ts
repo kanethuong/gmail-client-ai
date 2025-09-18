@@ -47,6 +47,25 @@ export interface GmailAttachment {
   data: string;
 }
 
+export interface SendEmailRequest {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
+  isHtml?: boolean;
+  threadId?: string;
+  replyToMessageId?: string;
+  references?: string;
+  inReplyTo?: string;
+}
+
+export interface SendEmailResponse {
+  id: string;
+  threadId: string;
+  labelIds: string[];
+}
+
 export class GmailApiService {
   private gmail: any;
   private oauth2Client: OAuth2Client;
@@ -214,6 +233,206 @@ export class GmailApiService {
   getHeaderValue(headers: GmailHeader[], name: string): string | null {
     const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
     return header?.value || null;
+  }
+
+  /**
+   * Send a new email or reply to an existing thread
+   */
+  async sendEmail(request: SendEmailRequest): Promise<SendEmailResponse> {
+    try {
+      // Build headers
+      const headers: string[] = [
+        `To: ${request.to.join(', ')}`,
+        `Subject: ${request.subject}`,
+      ];
+
+      if (request.cc && request.cc.length > 0) {
+        headers.push(`Cc: ${request.cc.join(', ')}`);
+      }
+      if (request.bcc && request.bcc.length > 0) {
+        headers.push(`Bcc: ${request.bcc.join(', ')}`);
+      }
+      if (request.inReplyTo) {
+        headers.push(`In-Reply-To: ${request.inReplyTo}`);
+      }
+      if (request.references) {
+        headers.push(`References: ${request.references}`);
+      }
+
+      // Add MIME headers
+      headers.push('MIME-Version: 1.0');
+      if (request.isHtml) {
+        headers.push('Content-Type: text/html; charset=utf-8');
+      } else {
+        headers.push('Content-Type: text/plain; charset=utf-8');
+      }
+
+      // Build the complete message with proper line breaks
+      const fullMessage = headers.join('\r\n') + '\r\n\r\n' + request.body;
+
+      // Debug logging
+      console.log('Full message being sent:', fullMessage);
+      console.log('Request body:', request.body);
+
+      // Encode for Gmail API (URL-safe base64)
+      const encodedMessage = Buffer.from(fullMessage)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      const requestBody: any = {
+        raw: encodedMessage,
+      };
+
+      if (request.threadId) {
+        requestBody.threadId = request.threadId;
+      }
+
+      const response = await this.gmail.users.messages.send({
+        userId: 'me',
+        requestBody,
+      });
+
+      return {
+        id: response.data.id,
+        threadId: response.data.threadId,
+        labelIds: response.data.labelIds || [],
+      };
+    } catch (error) {
+      console.error('Error sending email:', error);
+      throw new Error('Failed to send email');
+    }
+  }
+
+  /**
+   * Reply to a specific message in a thread
+   */
+  async replyToMessage(messageId: string, replyBody: string, replyAll: boolean = false): Promise<SendEmailResponse> {
+    try {
+      // Get the original message to extract threading information
+      const originalMessage = await this.getMessageDetails(messageId);
+      const headers = originalMessage.payload.headers;
+
+      const fromHeader = this.getHeaderValue(headers, 'From');
+      const toHeader = this.getHeaderValue(headers, 'To');
+      const ccHeader = this.getHeaderValue(headers, 'Cc');
+      const subjectHeader = this.getHeaderValue(headers, 'Subject');
+      const messageIdHeader = this.getHeaderValue(headers, 'Message-ID');
+      const referencesHeader = this.getHeaderValue(headers, 'References');
+
+      // Parse email addresses
+      const originalFrom = this.parseEmailAddress(fromHeader || '');
+      const originalTo = this.parseEmailAddresses(toHeader || '');
+      const originalCc = this.parseEmailAddresses(ccHeader || '');
+
+      // Build reply headers
+      const replyTo = [originalFrom].filter(Boolean);
+      const replyCc = replyAll ? originalCc.filter(email => email !== originalFrom) : [];
+
+      // Build subject with Re: prefix if not already present
+      const replySubject = subjectHeader?.startsWith('Re: ') ? subjectHeader : `Re: ${subjectHeader}`;
+
+      // Build references chain
+      const newReferences = referencesHeader
+        ? `${referencesHeader} ${messageIdHeader}`
+        : messageIdHeader || '';
+
+      return await this.sendEmail({
+        to: replyTo,
+        cc: replyCc,
+        subject: replySubject,
+        body: replyBody,
+        isHtml: true,
+        threadId: originalMessage.threadId,
+        replyToMessageId: messageId,
+        inReplyTo: messageIdHeader || '',
+        references: newReferences,
+      });
+    } catch (error) {
+      console.error('Error replying to message:', error);
+      throw new Error('Failed to reply to message');
+    }
+  }
+
+  /**
+   * Forward a message
+   */
+  async forwardMessage(messageId: string, to: string[], cc: string[] = [], forwardBody: string = ''): Promise<SendEmailResponse> {
+    try {
+      // Get the original message
+      const originalMessage = await this.getMessageDetails(messageId);
+      const headers = originalMessage.payload.headers;
+
+      const fromHeader = this.getHeaderValue(headers, 'From');
+      const toHeader = this.getHeaderValue(headers, 'To');
+      const subjectHeader = this.getHeaderValue(headers, 'Subject');
+      const dateHeader = this.getHeaderValue(headers, 'Date');
+
+      // Build forward subject
+      const forwardSubject = subjectHeader?.startsWith('Fwd: ') ? subjectHeader : `Fwd: ${subjectHeader}`;
+
+      // Get original message body
+      const originalBody = this.extractHtmlBody(originalMessage.payload) || originalMessage.snippet;
+
+      // Build forward body with original message
+      const fullForwardBody = `
+        ${forwardBody}
+
+        ---------- Forwarded message ----------
+        From: ${fromHeader}
+        Date: ${dateHeader}
+        Subject: ${subjectHeader}
+        To: ${toHeader}
+
+        ${originalBody}
+      `;
+
+      return await this.sendEmail({
+        to,
+        cc,
+        subject: forwardSubject,
+        body: fullForwardBody,
+        isHtml: true,
+      });
+    } catch (error) {
+      console.error('Error forwarding message:', error);
+      throw new Error('Failed to forward message');
+    }
+  }
+
+  /**
+   * Parse a single email address from header value
+   */
+  private parseEmailAddress(headerValue: string): string {
+    const emailMatch = headerValue.match(/<(.+?)>|([^\s<>]+@[^\s<>]+)/);
+    return emailMatch ? (emailMatch[1] || emailMatch[2] || '') : '';
+  }
+
+  /**
+   * Parse multiple email addresses from header value
+   */
+  private parseEmailAddresses(headerValue: string): string[] {
+    if (!headerValue) return [];
+
+    const emails: string[] = [];
+    const parts = headerValue.split(',');
+
+    for (const part of parts) {
+      const email = this.parseEmailAddress(part.trim());
+      if (email) emails.push(email);
+    }
+
+    return emails;
+  }
+
+  /**
+   * Encode text as quoted-printable for email content
+   */
+  private encodeQuotedPrintable(text: string): string {
+    // For simplicity, we'll just return the text as-is for now
+    // Gmail API can handle UTF-8 text directly in most cases
+    return text;
   }
 
   /**

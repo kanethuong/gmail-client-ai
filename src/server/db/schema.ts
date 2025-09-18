@@ -65,17 +65,18 @@ export const threads = pgTable(
   "threads",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    gmailThreadId: text("gmail_thread_id").notNull(), // Changed to text - Gmail thread IDs are strings
+    gmailThreadId: text("gmail_thread_id").notNull(),
     userId: integer("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    historyId: text("history_id"), // Changed to text - Gmail history IDs are strings
+    historyId: text("history_id"),
     snippet: text("snippet"),
     lastMessageDate: timestamp("last_message_date").notNull(),
     isUnread: boolean("is_unread").default(false).notNull(),
     isStarred: boolean("is_starred").default(false).notNull(),
     isImportant: boolean("is_important").default(false).notNull(),
     isDraft: boolean("is_draft").default(false).notNull(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

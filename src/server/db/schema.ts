@@ -70,7 +70,6 @@ export const threads = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     historyId: text("history_id"),
-    snippet: text("snippet"),
     lastMessageDate: timestamp("last_message_date").notNull(),
     isUnread: boolean("is_unread").default(false).notNull(),
     isStarred: boolean("is_starred").default(false).notNull(),

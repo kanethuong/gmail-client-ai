@@ -103,6 +103,37 @@ export class S3Service {
   }
 
   /**
+   * Get object content from S3
+   */
+  async getObject(key: string): Promise<string> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      const response = await this.s3Client.send(command);
+
+      if (!response.Body) {
+        throw new Error('Empty response body');
+      }
+
+      // Convert the stream to string
+      const chunks: Buffer[] = [];
+      const stream = response.Body as any;
+
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+
+      return Buffer.concat(chunks).toString('utf-8');
+    } catch (error) {
+      console.error(`Error getting object ${key}:`, error);
+      throw new Error(`Failed to get object ${key}`);
+    }
+  }
+
+  /**
    * Get a presigned URL for downloading a file
    */
   async getDownloadUrl(key: string, expiresIn: number = 3600): Promise<string> {

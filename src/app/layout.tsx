@@ -3,7 +3,7 @@ import "~/styles/globals.css";
 import { type Metadata } from "next";
 import { Geist } from "next/font/google";
 
-import { Providers } from "./_components/Providers";
+import { Providers } from "../components/Providers";
 
 export const metadata: Metadata = {
   title: "Create T3 App",

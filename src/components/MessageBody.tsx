@@ -5,28 +5,29 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { api } from "~/trpc/react";
 
 interface MessageBodyProps {
+  messageId?: number;
   bodyS3Key?: string | null;
   snippet: string;
   className?: string;
 }
 
-export function MessageBody({ bodyS3Key, snippet, className = "" }: MessageBodyProps) {
+export function MessageBody({ messageId, bodyS3Key, snippet, className = "" }: MessageBodyProps) {
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch HTML content from S3 if bodyS3Key exists
+  // Fetch HTML content from S3 if messageId exists
   const { data: s3Content, isLoading: fetchingS3, error: s3Error } = api.gmail.getMessageBody.useQuery(
-    { s3Key: bodyS3Key! },
+    { messageId: messageId?.toString() || "" },
     {
-      enabled: !!bodyS3Key,
+      enabled: !!messageId,
       retry: 1,
     }
   );
 
   useEffect(() => {
-    if (s3Content) {
-      setHtmlContent(s3Content);
+    if (s3Content?.htmlBody) {
+      setHtmlContent(s3Content.htmlBody);
       setError(null);
     } else if (s3Error) {
       setError("Failed to load message content");
@@ -34,7 +35,7 @@ export function MessageBody({ bodyS3Key, snippet, className = "" }: MessageBodyP
   }, [s3Content, s3Error]);
 
   // Show loading state
-  if (bodyS3Key && fetchingS3) {
+  if (messageId && fetchingS3) {
     return (
       <div className={`flex items-center gap-2 text-muted-foreground ${className}`}>
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -60,7 +61,7 @@ export function MessageBody({ bodyS3Key, snippet, className = "" }: MessageBodyP
   }
 
   // Render HTML content if available
-  if (bodyS3Key && htmlContent) {
+  if (messageId && htmlContent) {
     return (
       <div className={className}>
         <div

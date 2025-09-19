@@ -152,7 +152,6 @@ export class GmailSyncService {
           gmailThreadId: gmailThread.id,
           userId,
           historyId: gmailThread.historyId,
-          snippet: gmailThread.snippet,
           lastMessageDate,
           isUnread: gmailThread.messages.some((msg: any) =>
             msg.labelIds?.includes('UNREAD')

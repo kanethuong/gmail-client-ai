@@ -20,7 +20,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .query(async ({ ctx, input }) => {
       try {
-        return await threadService.getThreads(parseInt(ctx.session.user.id), input);
+        return await threadService.getThreads(ctx.session.user.id, input);
       } catch (error) {
         console.error('Error fetching threads:', error);
         throw new Error('Failed to fetch threads');
@@ -36,7 +36,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .query(async ({ ctx, input }) => {
       try {
-        return await messageService.getThreadMessages(parseInt(ctx.session.user.id), input.threadId);
+        return await messageService.getThreadMessages(ctx.session.user.id, input.threadId);
       } catch (error) {
         console.error('Error fetching thread messages:', error);
         throw new Error('Failed to fetch thread messages');
@@ -49,7 +49,7 @@ export const gmailRouter = createTRPCRouter({
   getLabels: protectedProcedure
     .query(async ({ ctx }) => {
       try {
-        return await gmailService.getLabels(parseInt(ctx.session.user.id));
+        return await gmailService.getLabels(ctx.session.user.id);
       } catch (error) {
         console.error('Error fetching labels:', error);
         throw new Error('Failed to fetch labels');
@@ -62,7 +62,7 @@ export const gmailRouter = createTRPCRouter({
   getThreadCounts: protectedProcedure
     .query(async ({ ctx }) => {
       try {
-        return await gmailService.getThreadCounts(parseInt(ctx.session.user.id));
+        return await gmailService.getThreadCounts(ctx.session.user.id);
       } catch (error) {
         console.error('Error fetching thread counts:', error);
         throw new Error('Failed to fetch thread counts');
@@ -78,7 +78,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await threadService.markThreadRead(parseInt(ctx.session.user.id), input.threadId);
+        return await threadService.markThreadRead(ctx.session.user.id, input.threadId);
       } catch (error) {
         console.error('Error marking thread as read:', error);
         throw new Error('Failed to mark thread as read');
@@ -94,7 +94,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await threadService.toggleThreadStar(parseInt(ctx.session.user.id), input.threadId);
+        return await threadService.toggleThreadStar(ctx.session.user.id, input.threadId);
       } catch (error) {
         console.error('Error toggling thread star:', error);
         throw new Error('Failed to toggle thread star');
@@ -110,7 +110,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .query(async ({ ctx, input }) => {
       try {
-        return await gmailService.getMessageBody(parseInt(ctx.session.user.id), parseInt(input.messageId));
+        return await gmailService.getMessageBody(ctx.session.user.id, parseInt(input.messageId));
       } catch (error) {
         console.error('Error fetching message body:', error);
         throw new Error('Failed to fetch message body');
@@ -126,7 +126,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .query(async ({ ctx, input }) => {
       try {
-        return await gmailService.getAttachmentDownloadUrl(parseInt(ctx.session.user.id), parseInt(input.attachmentId));
+        return await gmailService.getAttachmentDownloadUrl(ctx.session.user.id, parseInt(input.attachmentId));
       } catch (error) {
         console.error('Error getting attachment URL:', error);
         throw new Error('Failed to get attachment URL');
@@ -154,7 +154,7 @@ export const gmailRouter = createTRPCRouter({
           bodyLength: input.body.length
         });
 
-        return await gmailService.sendEmail(parseInt(ctx.session.user.id), input);
+        return await gmailService.sendEmail(ctx.session.user.id, input);
       } catch (error) {
         console.error('Error sending email:', error);
         throw new Error('Failed to send email');
@@ -172,7 +172,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await gmailService.replyToMessage(parseInt(ctx.session.user.id), {
+        return await gmailService.replyToMessage(ctx.session.user.id, {
           messageId: parseInt(input.messageId),
           body: input.body,
           replyAll: input.replyAll,
@@ -194,7 +194,7 @@ export const gmailRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await gmailService.forwardMessage(parseInt(ctx.session.user.id), {
+        return await gmailService.forwardMessage(ctx.session.user.id, {
           messageId: parseInt(input.messageId),
           to: input.to,
           body: input.body,

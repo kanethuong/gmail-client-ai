@@ -19,15 +19,14 @@ export function AttachmentDownload({
   className = ""
 }: AttachmentDownloadProps) {
   const [isDownloading, setIsDownloading] = useState(false);
-
-  const getAttachmentUrl = api.gmail.getAttachmentUrl.useMutation();
+  const utils = api.useUtils();
 
   const handleDownload = async () => {
     setIsDownloading(true);
 
     try {
-      // Get download URL from tRPC
-      const response = await getAttachmentUrl.mutateAsync({ attachmentId });
+      // Get download URL from tRPC using utils.fetch
+      const response = await utils.gmail.getAttachmentUrl.fetch({ attachmentId: attachmentId.toString() });
 
       // Create a temporary anchor element to trigger download
       const link = document.createElement('a');

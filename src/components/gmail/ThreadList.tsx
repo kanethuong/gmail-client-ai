@@ -95,9 +95,6 @@ export function ThreadList({
             {threads.filter((t) => t.isUnread).length} unread
           </Badge>
         </div>
-        <div className="mt-2 text-xs text-muted-foreground">
-          {threads.length} threads • hasNext: {hasNextPage ? 'Yes' : 'No'} • fetching: {isFetchingNextPage ? 'Yes' : 'No'}
-        </div>
       </div>
 
       <div

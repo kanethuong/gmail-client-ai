@@ -108,11 +108,10 @@ export default function GmailClient() {
     isFetchingNextPage,
     refetch: refetchThreads,
   } = api.gmail.getThreads.useInfiniteQuery(
-    ({ pageParam = 0 }) => ({
+    {
       limit: 20,
-      cursor: pageParam as number,
       label: selectedLabel || undefined,
-    }),
+    },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
     }

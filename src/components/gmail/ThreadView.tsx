@@ -25,7 +25,7 @@ interface Message {
   subject: string;
   date: Date;
   snippet: string;
-  bodyS3Key?: string;
+  bodyS3Key: string | null;
   attachments: {
     id: number;
     filename: string;

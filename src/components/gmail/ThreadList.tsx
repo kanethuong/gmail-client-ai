@@ -1,5 +1,7 @@
 import { Star, Loader2 } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
+import { api } from "~/trpc/react";
+import { useEffect } from "react";
 
 interface Thread {
   id: number;
@@ -36,6 +38,7 @@ interface ThreadListProps {
   onScrollReachEnd?: () => void;
   isFetchingNextPage?: boolean;
   hasNextPage?: boolean;
+  searchQuery?: string;
 }
 
 function formatDate(date: Date): string {
@@ -61,7 +64,38 @@ export function ThreadList({
   onScrollReachEnd,
   isFetchingNextPage = false,
   hasNextPage = false,
+  searchQuery,
 }: ThreadListProps) {
+  const utils = api.useUtils();
+
+  // Prefetch thread messages for visible threads
+  useEffect(() => {
+    const prefetchVisible = async () => {
+      // Prefetch the first 5 threads
+      const visibleThreads = threads.slice(0, 5);
+
+      for (const thread of visibleThreads) {
+        try {
+          await utils.gmail.getThreadMessages.prefetch(
+            { threadId: thread.id },
+            {
+              staleTime: 10 * 60 * 1000, // 10 minutes
+            }
+          );
+        } catch (error) {
+          // Silently fail prefetch attempts
+          console.debug('Prefetch failed for thread:', thread.id);
+        }
+      }
+    };
+
+    if (threads.length > 0) {
+      // Debounce prefetching to avoid overwhelming the server
+      const timeoutId = setTimeout(prefetchVisible, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [threads, utils.gmail.getThreadMessages]);
+
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     // Trigger load when user is within 200px of the bottom
@@ -74,6 +108,9 @@ export function ThreadList({
   };
 
   const getDisplayTitle = () => {
+    if (searchQuery) {
+      return `Search results for "${searchQuery}"`;
+    }
     if (selectedLabel) {
       // First try to find in predefined labels
       const predefinedLabel = predefinedLabels?.find((l) => l.gmailLabelId === selectedLabel);
@@ -102,6 +139,29 @@ export function ThreadList({
         onScroll={handleScroll}
         style={{ height: 'calc(100vh - 200px)' }}
       >
+        {threads.length === 0 && searchQuery && !isFetchingNextPage && (
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div className="text-muted-foreground mb-4 text-4xl">🔍</div>
+            <h3 className="mb-2 text-lg font-medium">No results found</h3>
+            <p className="text-muted-foreground text-sm">
+              No emails match your search for "<span className="font-medium">{searchQuery}</span>"
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Try different keywords or check your spelling
+            </p>
+          </div>
+        )}
+
+        {threads.length === 0 && !searchQuery && !isFetchingNextPage && (
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+            <div className="text-muted-foreground mb-4 text-4xl">📧</div>
+            <h3 className="mb-2 text-lg font-medium">No emails</h3>
+            <p className="text-muted-foreground text-sm">
+              This folder is empty
+            </p>
+          </div>
+        )}
+
         {threads.map((thread, index) => (
           <div
             key={`${thread.id}-${thread.gmailThreadId}-${index}`}

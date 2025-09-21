@@ -1,13 +1,28 @@
 import { db } from "~/server/db";
 import { threads, messages, attachments as attachmentsTable } from "~/server/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import { cacheService } from "~/lib/cache";
 
 export class MessageService {
-  async getThreadMessages(userId: number, threadId: number) {
+  async getThreadMessages(userId: number, threadId: number, bypassCache = false) {
+    const cacheKey = cacheService.threadMessagesKey(userId, threadId);
+
+    // Try cache first (unless bypassed)
+    if (!bypassCache) {
+      const cached = await cacheService.get(cacheKey);
+      if (cached) {
+        console.log('Returning cached thread messages for thread', threadId);
+        return cached;
+      }
+    } else {
+      console.log('Bypassing cache for thread messages', threadId);
+    }
+
     // Verify thread belongs to user
     const thread = await db.select({
       id: threads.id,
       gmailThreadId: threads.gmailThreadId,
+      isUnread: threads.isUnread,
     })
       .from(threads)
       .where(and(
@@ -39,7 +54,7 @@ export class MessageService {
       .where(eq(messages.threadId, threadId))
       .orderBy(messages.date); // Ascending order: oldest first, newest last
 
-    // Get attachments for all messages in this thread
+    // Get attachments for all messages in this thread (OPTIMIZED QUERY)
     const messageIds = threadMessages.map(msg => msg.id);
     const attachments = messageIds.length > 0 ? await db.select({
       id: attachmentsTable.id,
@@ -50,8 +65,7 @@ export class MessageService {
       s3Key: attachmentsTable.s3Key,
     })
       .from(attachmentsTable)
-      .where(eq(attachmentsTable.messageId, messageIds[0]!) || (messageIds.length > 1 ?
-        eq(attachmentsTable.messageId, messageIds[1]!) : eq(attachmentsTable.messageId, messageIds[0]!))) : [];
+      .where(inArray(attachmentsTable.messageId, messageIds)) : [];
 
     // Group attachments by message ID
     const attachmentsByMessage = attachments.reduce((acc, attachment) => {
@@ -68,10 +82,20 @@ export class MessageService {
       attachments: attachmentsByMessage[message.id] || [],
     }));
 
-    return {
+    const result = {
       thread: thread[0],
       messages: messagesWithAttachments,
     };
+
+    console.log(`Fetched ${messagesWithAttachments.length} messages from database for thread ${threadId}`);
+
+    // Cache the result for 10 minutes (unless bypassed)
+    if (!bypassCache) {
+      await cacheService.set(cacheKey, result, 600);
+      console.log('Cached thread messages for thread', threadId);
+    }
+
+    return result;
   }
 
   async getMessageById(userId: number, messageId: number) {

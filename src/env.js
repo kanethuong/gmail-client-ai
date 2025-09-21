@@ -18,6 +18,13 @@ export const env = createEnv({
     AWS_SECRET_ACCESS_KEY: z.string(),
     AWS_REGION: z.string().default("us-east-1"),
     S3_BUCKET_NAME: z.string(),
+    REDIS_URL: z.string().optional(),
+    GEMINI_API_KEY: z.string(),
+    // Scheduled Sync Configuration
+    SCHEDULED_SYNC_ENABLED: z.string().default("true"),
+    SYNC_CRON_SCHEDULE: z.string().default("*/30 * * * *"),
+    SYNC_INTERVAL_MINUTES: z.string().default("30"),
+    CRON_SECRET: z.string().optional(),
   },
 
   /**
@@ -43,6 +50,12 @@ export const env = createEnv({
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
     AWS_REGION: process.env.AWS_REGION,
     S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
+    REDIS_URL: process.env.REDIS_URL,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    SCHEDULED_SYNC_ENABLED: process.env.SCHEDULED_SYNC_ENABLED,
+    SYNC_CRON_SCHEDULE: process.env.SYNC_CRON_SCHEDULE,
+    SYNC_INTERVAL_MINUTES: process.env.SYNC_INTERVAL_MINUTES,
+    CRON_SECRET: process.env.CRON_SECRET,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

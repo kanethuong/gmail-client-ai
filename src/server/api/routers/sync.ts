@@ -1,9 +1,13 @@
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "~/server/api/trpc";
 import { GmailSyncService } from "~/lib/gmail-sync";
+import { cronScheduler } from "~/lib/cron-scheduler";
 import { db } from "~/server/db";
 import { users, syncLogs } from "~/server/db/schema";
 import { eq, desc } from "drizzle-orm";
+
+// Initialize scheduled sync on server startup
+import "~/lib/init-scheduler";
 
 export const syncRouter = createTRPCRouter({
   /**
@@ -137,5 +141,40 @@ export const syncRouter = createTRPCRouter({
         lastSyncAt: userData?.lastSyncAt,
         hasOAuthTokens: !!(userData?.oauthAccessToken && userData?.oauthRefreshToken),
       };
+    }),
+
+  /**
+   * Get scheduled sync status
+   */
+  getScheduledSyncStatus: protectedProcedure
+    .query(async () => {
+      const tasksStatus = cronScheduler.getTasksStatus();
+
+      return {
+        enabled: process.env.SCHEDULED_SYNC_ENABLED !== 'false',
+        cronSchedule: process.env.SYNC_CRON_SCHEDULE || '*/30 * * * *',
+        intervalMinutes: parseInt(process.env.SYNC_INTERVAL_MINUTES || "30"),
+        isRunning: tasksStatus['scheduled-sync'] || false,
+      };
+    }),
+
+  /**
+   * Trigger manual scheduled sync
+   */
+  triggerScheduledSync: protectedProcedure
+    .mutation(async () => {
+      try {
+        await cronScheduler.triggerManualSync();
+
+        return {
+          success: true,
+          message: "Manual scheduled sync triggered successfully",
+          timestamp: new Date().toISOString(),
+        };
+      } catch (error) {
+        throw new Error(
+          `Failed to trigger scheduled sync: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
     }),
 });

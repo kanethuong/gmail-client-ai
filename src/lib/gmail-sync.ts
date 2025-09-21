@@ -22,6 +22,68 @@ export class GmailSyncService {
   }
 
   /**
+   * Sync a single thread by Gmail thread ID
+   */
+  async syncSingleThread(userId: number, gmailThreadId: string): Promise<SyncResult> {
+    try {
+      console.log(`Starting single thread sync for thread ${gmailThreadId}`);
+
+      // Get the specific thread from Gmail
+      const gmailThread = await this.gmailApi.getThreadDetails(gmailThreadId);
+
+      if (!gmailThread) {
+        console.warn(`Thread ${gmailThreadId} not found in Gmail`);
+        return {
+          success: false,
+          threadsSynced: 0,
+          messagesSynced: 0,
+          attachmentsSynced: 0,
+          error: 'Thread not found in Gmail'
+        };
+      }
+
+      console.log(`Gmail thread details fetched:`, {
+        id: gmailThread.id,
+        snippet: gmailThread.snippet,
+        messagesCount: gmailThread.messages?.length || 0,
+        historyId: gmailThread.historyId
+      });
+
+      // Log message IDs in the thread
+      if (gmailThread.messages) {
+        console.log(`Gmail thread messages:`, gmailThread.messages.map(msg => ({
+          id: msg.id,
+          snippet: msg.snippet,
+          internalDate: msg.internalDate
+        })));
+      }
+
+      // Sync labels first (needed for thread syncing)
+      await this.syncLabels(userId);
+
+      // Sync the thread
+      const result = await this.syncThread(userId, gmailThread, new Date());
+      console.log(`Single thread sync completed for ${gmailThreadId}:`, {
+        success: result.success,
+        threadsSynced: result.threadsSynced,
+        messagesSynced: result.messagesSynced,
+        attachmentsSynced: result.attachmentsSynced
+      });
+
+      return result;
+    } catch (error) {
+      console.error(`Failed to sync single thread ${gmailThreadId}:`, error);
+      return {
+        success: false,
+        threadsSynced: 0,
+        messagesSynced: 0,
+        attachmentsSynced: 0,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
    * Perform full sync for a user
    */
   async syncUser(userId: number): Promise<SyncResult> {
@@ -131,6 +193,8 @@ export class GmailSyncService {
     let messagesSynced = 0;
     let attachmentsSynced = 0;
 
+    console.log(`[syncThread] Starting sync for thread ${gmailThread.id}, messages: ${gmailThread.messages?.length || 0}`);
+
     try {
       // Check if thread already exists
       const existingThread = await db.select()
@@ -140,6 +204,8 @@ export class GmailSyncService {
           eq(threads.gmailThreadId, gmailThread.id)
         ))
         .limit(1);
+
+      console.log(`[syncThread] Existing thread found: ${existingThread.length > 0}`);
 
       let threadId: number;
 
@@ -183,11 +249,14 @@ export class GmailSyncService {
       }
 
       // Sync messages in this thread
+      console.log(`[syncThread] Processing ${gmailThread.messages.length} messages for thread ${threadId}`);
       for (const gmailMessage of gmailThread.messages) {
         try {
+          console.log(`[syncThread] Syncing message ${gmailMessage.id}, snippet: ${gmailMessage.snippet}`);
           const messageResult = await this.syncMessage(userId, threadId, gmailMessage);
           messagesSynced += messageResult.messagesSynced;
           attachmentsSynced += messageResult.attachmentsSynced;
+          console.log(`[syncThread] Message ${gmailMessage.id} sync result: ${messageResult.messagesSynced} messages, ${messageResult.attachmentsSynced} attachments`);
         } catch (error) {
           console.error(`Error syncing message ${gmailMessage.id}:`, error);
         }
@@ -245,6 +314,8 @@ export class GmailSyncService {
     let messagesSynced = 0;
     let attachmentsSynced = 0;
 
+    console.log(`[syncMessage] Checking if message ${gmailMessage.id} exists in database for thread ${threadId}`);
+
     try {
       // Check if message already exists
       const existingMessage = await db.select()
@@ -255,7 +326,10 @@ export class GmailSyncService {
         ))
         .limit(1);
 
+      console.log(`[syncMessage] Message ${gmailMessage.id} already exists: ${existingMessage.length > 0}`);
+
       if (!existingMessage.length) {
+        console.log(`[syncMessage] Creating new message ${gmailMessage.id} in database`);
         // Extract message data
         const headers = gmailMessage.payload.headers || [];
         const from = this.gmailApi.getHeaderValue(headers, 'From') || '';

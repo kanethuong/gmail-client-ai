@@ -13,33 +13,44 @@ interface MessageBodyProps {
 
 export function MessageBody({ messageId, bodyS3Key, snippet, className = "" }: MessageBodyProps) {
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [showSnippet, setShowSnippet] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch HTML content from S3 if messageId exists
+  // Fetch HTML content from S3 if messageId exists with aggressive caching
   const { data: s3Content, isLoading: fetchingS3, error: s3Error } = api.gmail.getMessageBody.useQuery(
     { messageId: messageId?.toString() || "" },
     {
       enabled: !!messageId,
       retry: 1,
+      staleTime: 24 * 60 * 60 * 1000, // 24 hours
+      cacheTime: 7 * 24 * 60 * 60 * 1000, // 7 days
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
     }
   );
 
   useEffect(() => {
     if (s3Content?.htmlBody) {
       setHtmlContent(s3Content.htmlBody);
+      setShowSnippet(false);
       setError(null);
     } else if (s3Error) {
       setError("Failed to load message content");
+      setShowSnippet(true);
     }
   }, [s3Content, s3Error]);
 
-  // Show loading state
-  if (messageId && fetchingS3) {
+  // Show snippet immediately while loading full content
+  if (messageId && fetchingS3 && showSnippet) {
     return (
-      <div className={`flex items-center gap-2 text-muted-foreground ${className}`}>
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-sm">Loading message content...</span>
+      <div className={className}>
+        <div className="text-sm leading-relaxed whitespace-pre-wrap opacity-75">
+          {snippet}
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground mt-2">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          <span className="text-xs">Loading full content...</span>
+        </div>
       </div>
     );
   }

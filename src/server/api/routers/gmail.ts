@@ -3,6 +3,10 @@ import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { GmailService } from "~/server/services/gmail-service";
 import { ThreadService } from "~/server/services/thread-service";
 import { MessageService } from "~/server/services/message-service";
+import { generateReplyDraft } from "~/server/services/ai-service";
+import { db } from "~/server/db";
+import { threads, messages } from "~/server/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 
 const gmailService = new GmailService();
 const threadService = new ThreadService();
@@ -17,6 +21,7 @@ export const gmailRouter = createTRPCRouter({
       limit: z.number().default(20),
       cursor: z.number().optional(),
       label: z.string().optional(),
+      searchQuery: z.string().optional()
     }))
     .query(async ({ ctx, input }) => {
       try {
@@ -33,10 +38,15 @@ export const gmailRouter = createTRPCRouter({
   getThreadMessages: protectedProcedure
     .input(z.object({
       threadId: z.number(),
+      bypassCache: z.boolean().optional(),
     }))
     .query(async ({ ctx, input }) => {
       try {
-        return await messageService.getThreadMessages(ctx.session.user.id, input.threadId);
+        return await messageService.getThreadMessages(
+          ctx.session.user.id,
+          input.threadId,
+          input.bypassCache
+        );
       } catch (error) {
         console.error('Error fetching thread messages:', error);
         throw new Error('Failed to fetch thread messages');
@@ -172,11 +182,41 @@ export const gmailRouter = createTRPCRouter({
     }))
     .mutation(async ({ ctx, input }) => {
       try {
-        return await gmailService.replyToMessage(ctx.session.user.id, {
+        const result = await gmailService.replyToMessage(ctx.session.user.id, {
           messageId: parseInt(input.messageId),
           body: input.body,
           replyAll: input.replyAll,
         });
+
+        console.log('Reply sent, starting thread sync...');
+
+        // Sync the specific thread to get the new message
+        const syncResult = await gmailService.syncSingleThread(ctx.session.user.id, result.threadId);
+
+        console.log('Thread sync completed:', syncResult);
+
+        // Clear Redis cache for this thread
+        // Get the thread ID from the message
+        const messageData = await db.select({ threadId: messages.threadId })
+          .from(messages)
+          .innerJoin(threads, eq(messages.threadId, threads.id))
+          .where(and(
+            eq(messages.id, parseInt(input.messageId)),
+            eq(threads.userId, ctx.session.user.id)
+          ))
+          .limit(1);
+
+        if (messageData.length > 0) {
+          const { cacheService } = await import("~/lib/cache");
+          const cacheKey = cacheService.threadMessagesKey(ctx.session.user.id, messageData[0]!.threadId);
+          await cacheService.del(cacheKey);
+          console.log('Redis cache cleared for thread messages');
+        }
+
+        return {
+          ...result,
+          syncResult
+        };
       } catch (error) {
         console.error('Error replying to message:', error);
         throw new Error('Failed to reply to message');
@@ -202,6 +242,86 @@ export const gmailRouter = createTRPCRouter({
       } catch (error) {
         console.error('Error forwarding message:', error);
         throw new Error('Failed to forward message');
+      }
+    }),
+
+  /**
+   * Debug: Get raw thread data from database
+   */
+  debugThreadData: protectedProcedure
+    .input(z.object({
+      threadId: z.number(),
+    }))
+    .query(async ({ ctx, input }) => {
+      try {
+        // Get thread data directly from database
+        const threadData = await db.select()
+          .from(threads)
+          .where(and(
+            eq(threads.id, input.threadId),
+            eq(threads.userId, ctx.session.user.id)
+          ))
+          .limit(1);
+
+        if (!threadData.length) {
+          return { error: 'Thread not found' };
+        }
+
+        // Get all messages in thread
+        const messagesData = await db.select()
+          .from(messages)
+          .where(eq(messages.threadId, input.threadId))
+          .orderBy(asc(messages.date));
+
+        return {
+          thread: threadData[0],
+          messages: messagesData.map(msg => ({
+            id: msg.id,
+            gmailMessageId: msg.gmailMessageId,
+            from: msg.from,
+            to: msg.to,
+            subject: msg.subject,
+            snippet: msg.snippet,
+            date: msg.date,
+            createdAt: msg.createdAt
+          }))
+        };
+      } catch (error) {
+        console.error('Error getting debug thread data:', error);
+        throw new Error('Failed to get debug thread data');
+      }
+    }),
+
+  /**
+   * Generate AI draft for reply
+   */
+  generateAIDraft: protectedProcedure
+    .input(z.object({
+      threadId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const threadData = await messageService.getThreadMessages(ctx.session.user.id, input.threadId);
+
+        if (!threadData || typeof threadData !== 'object' || !('messages' in threadData) || !Array.isArray(threadData.messages) || threadData.messages.length === 0) {
+          throw new Error('No messages found in thread');
+        }
+
+        const threadContext = {
+          messages: threadData.messages.map((msg: any) => ({
+            from: msg.from,
+            to: msg.to,
+            subject: msg.subject,
+            snippet: msg.snippet,
+            date: msg.date,
+          })),
+        };
+
+        const draft = await generateReplyDraft(threadContext);
+        return { draft };
+      } catch (error) {
+        console.error('Error generating AI draft:', error);
+        throw new Error('Failed to generate AI draft');
       }
     }),
 });

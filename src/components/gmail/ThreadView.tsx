@@ -17,6 +17,8 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { Separator } from "~/components/ui/separator";
 import { MessageBody } from "~/components/MessageBody";
 import { AttachmentDownload } from "~/components/AttachmentDownload";
+import { api } from "~/trpc/react";
+import { useEffect } from "react";
 
 interface Message {
   id: number;
@@ -64,6 +66,7 @@ interface ThreadViewProps {
   onForward: (messageId: string) => void;
   onDraftWithAI: () => void;
   isReplying?: boolean;
+  isDraftingWithAI?: boolean;
 }
 
 function formatDate(date: Date | string): string {
@@ -97,7 +100,37 @@ export function ThreadView({
   onForward,
   onDraftWithAI,
   isReplying = false,
+  isDraftingWithAI = false,
 }: ThreadViewProps) {
+  const utils = api.useUtils();
+
+  // Prefetch message bodies for all messages in this thread
+  useEffect(() => {
+    const prefetchMessageBodies = async () => {
+      const messages = threadData.messages || [];
+
+      for (const message of messages) {
+        if (message.id && message.bodyS3Key) {
+          try {
+            await utils.gmail.getMessageBody.prefetch(
+              { messageId: message.id.toString() },
+              {
+                staleTime: 24 * 60 * 60 * 1000, // 24 hours
+              }
+            );
+          } catch (error) {
+            console.debug('Failed to prefetch message body:', message.id);
+          }
+        }
+      }
+    };
+
+    if (threadData.messages?.length > 0) {
+      // Small delay to prioritize initial render
+      const timeoutId = setTimeout(prefetchMessageBodies, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [threadData.messages, utils.gmail.getMessageBody]);
   return (
     <div className="flex flex-1 flex-col">
       <div className="border-border border-b p-4">
@@ -109,18 +142,6 @@ export function ThreadView({
             <h2 className="font-semibold">
               {threadData.messages?.[0]?.subject || "Thread"}
             </h2>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon">
-              <Archive className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Star className="h-4 w-4" />
-            </Button>
           </div>
         </div>
       </div>
@@ -204,15 +225,6 @@ export function ThreadView({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onReply(true)}
-                    disabled={isReplying || !replyText.trim()}
-                  >
-                    <ReplyAll className="mr-1 h-3 w-3" />
-                    Reply All
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
                     onClick={() => onForward(message.id.toString())}
                   >
                     <Forward className="mr-1 h-3 w-3" />
@@ -291,6 +303,7 @@ export function ThreadView({
               value={replyText}
               onChange={(e) => onReplyTextChange(e.target.value)}
               className="mb-3 min-h-[120px]"
+              disabled={isReplying}
             />
 
             <div className="flex items-center justify-between">
@@ -311,13 +324,22 @@ export function ThreadView({
                   variant="outline"
                   size="sm"
                   onClick={onDraftWithAI}
+                  disabled={isDraftingWithAI || isReplying}
                 >
-                  <Sparkles className="mr-1 h-3 w-3" />
-                  Draft with AI
+                  {isDraftingWithAI ? (
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1 h-3 w-3" />
+                  )}
+                  {isDraftingWithAI ? 'Generating...' : 'Draft with AI'}
                 </Button>
               </div>
 
-              <Button variant="ghost" size="icon">
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={isReplying}
+              >
                 <Paperclip className="h-4 w-4" />
               </Button>
             </div>

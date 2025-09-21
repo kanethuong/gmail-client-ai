@@ -11,6 +11,7 @@ export function SyncPanel() {
 
   const syncStatusQuery = api.sync.getSyncStatus.useQuery();
   const accountInfoQuery = api.sync.getAccountInfo.useQuery();
+  const scheduledSyncStatusQuery = api.sync.getScheduledSyncStatus.useQuery();
   
   const triggerSyncMutation = api.sync.triggerSync.useMutation({
     onMutate: () => {
@@ -23,6 +24,14 @@ export function SyncPanel() {
     },
     onError: () => {
       setIsSyncing(false);
+    },
+  });
+
+  const triggerScheduledSyncMutation = api.sync.triggerScheduledSync.useMutation({
+    onSuccess: () => {
+      // Refetch status after manual trigger
+      scheduledSyncStatusQuery.refetch();
+      syncStatusQuery.refetch();
     },
   });
 
@@ -116,6 +125,61 @@ export function SyncPanel() {
               <div>Threads synced: {triggerSyncMutation.data.threadsSynced}</div>
               <div>Messages synced: {triggerSyncMutation.data.messagesSynced}</div>
               <div>Attachments synced: {triggerSyncMutation.data.attachmentsSynced}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Scheduled Sync</h3>
+
+        {scheduledSyncStatusQuery.data && (
+          <div className="rounded-lg border p-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Status:</span>
+                <Badge className={scheduledSyncStatusQuery.data.enabled && scheduledSyncStatusQuery.data.isRunning ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                  {scheduledSyncStatusQuery.data.enabled ?
+                    (scheduledSyncStatusQuery.data.isRunning ? "Running" : "Enabled")
+                    : "Disabled"
+                  }
+                </Badge>
+              </div>
+
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="font-medium">Schedule:</span> {scheduledSyncStatusQuery.data.cronSchedule}
+                </div>
+                <div>
+                  <span className="font-medium">Interval:</span> Every {scheduledSyncStatusQuery.data.intervalMinutes} minutes
+                </div>
+              </div>
+
+              {scheduledSyncStatusQuery.data.enabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => triggerScheduledSyncMutation.mutate()}
+                  disabled={triggerScheduledSyncMutation.isPending}
+                  className="w-full"
+                >
+                  {triggerScheduledSyncMutation.isPending ? "Triggering..." : "Trigger Manual Sync"}
+                </Button>
+              )}
+
+              {triggerScheduledSyncMutation.data && (
+                <div className="rounded border border-green-200 bg-green-50 p-2">
+                  <p className="text-green-700 text-sm">{triggerScheduledSyncMutation.data.message}</p>
+                </div>
+              )}
+
+              {triggerScheduledSyncMutation.error && (
+                <div className="rounded border border-red-200 bg-red-50 p-2">
+                  <p className="text-red-700 text-sm">{triggerScheduledSyncMutation.error.message}</p>
+                </div>
+              )}
             </div>
           </div>
         )}

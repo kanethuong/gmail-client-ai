@@ -3,6 +3,8 @@ import { users, threads, messages, labels, threadLabels, attachments as attachme
 import { eq, and, desc, asc, inArray, count, sql } from "drizzle-orm";
 import { S3Service } from "~/lib/s3-service";
 import { GmailApiService } from "~/lib/gmail-api";
+import { cacheService } from "~/lib/cache";
+import { GmailSyncService } from "~/lib/gmail-sync";
 
 export class GmailService {
   private s3Service: S3Service;
@@ -67,6 +69,7 @@ export class GmailService {
     const message = await db.select({
       gmailMessageId: messages.gmailMessageId,
       threadId: messages.threadId,
+      gmailThreadId: threads.gmailThreadId,
     })
       .from(messages)
       .innerJoin(threads, eq(messages.threadId, threads.id))
@@ -91,7 +94,7 @@ export class GmailService {
     return {
       success: true,
       messageId: result.id,
-      threadId: result.threadId,
+      threadId: message[0]!.gmailThreadId,
     };
   }
 
@@ -134,6 +137,14 @@ export class GmailService {
   }
 
   async getMessageBody(userId: number, messageId: number) {
+    const cacheKey = cacheService.messageBodyKey(userId, messageId);
+
+    // Try cache first
+    const cached = await cacheService.get<{ htmlBody: string | null; snippet: string }>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     // Verify the message belongs to the user and get S3 key
     const message = await db.select({
       bodyS3Key: messages.bodyS3Key,
@@ -152,24 +163,33 @@ export class GmailService {
     }
 
     if (!message[0]!.bodyS3Key) {
-      return {
+      const result = {
         htmlBody: null,
         snippet: message[0]!.snippet,
       };
+      // Cache the result for 24 hours
+      await cacheService.set(cacheKey, result, 86400);
+      return result;
     }
 
     try {
       const htmlBody = await this.s3Service.getObject(message[0]!.bodyS3Key);
-      return {
+      const result = {
         htmlBody,
         snippet: message[0]!.snippet,
       };
+      // Cache the result for 24 hours
+      await cacheService.set(cacheKey, result, 86400);
+      return result;
     } catch (error) {
       console.error("Error fetching message body from S3:", error);
-      return {
+      const result = {
         htmlBody: null,
         snippet: message[0]!.snippet,
       };
+      // Cache the fallback for shorter time (1 hour)
+      await cacheService.set(cacheKey, result, 3600);
+      return result;
     }
   }
 
@@ -222,7 +242,10 @@ export class GmailService {
     })
       .from(threadLabels)
       .innerJoin(threads, eq(threadLabels.threadId, threads.id))
-      .where(eq(threads.userId, userId))
+      .where(and(
+        eq(threads.userId, userId),
+        eq(threads.isUnread, true)
+      ))
       .groupBy(threadLabels.labelId)
       .as('thread_counts');
 
@@ -233,5 +256,34 @@ export class GmailService {
       .from(labels)
       .leftJoin(subquery, eq(labels.id, subquery.labelId))
       .where(eq(labels.userId, userId));
+  }
+
+  async syncSingleThread(userId: number, gmailThreadId: string) {
+    try {
+      console.log(`Initiating sync for thread ${gmailThreadId}`);
+
+      // Get user tokens for sync service
+      const { oauthAccessToken, oauthRefreshToken } = await this.getUserTokens(userId);
+      const syncService = new GmailSyncService(oauthAccessToken!, oauthRefreshToken!);
+
+      // Wait a bit to allow Gmail to process the sent message
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Use the public syncSingleThread method
+      const syncResult = await syncService.syncSingleThread(userId, gmailThreadId);
+      console.log(`Thread sync completed:`, syncResult);
+
+      return syncResult;
+    } catch (error) {
+      console.error(`Failed to sync thread ${gmailThreadId}:`, error);
+      // Don't throw error to avoid breaking the reply process
+      return {
+        success: false,
+        threadsSynced: 0,
+        messagesSynced: 0,
+        attachmentsSynced: 0,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 }

@@ -10,7 +10,7 @@ export default function InboxPage() {
   const searchParams = useSearchParams();
 
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const searchQuery = searchParams.get('search') || '';
+  const searchQuery = searchParams ? searchParams.get('search') || '' : '';
 
   // Debounce search query for real-time search
   useEffect(() => {

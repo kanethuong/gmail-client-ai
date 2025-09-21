@@ -153,7 +153,7 @@ export default function InboxLayout({ children }: InboxLayoutProps) {
                 const IconComponent = label.icon;
                 const labelCount = threadCounts?.find((c) => c.labelId === label.gmailLabelId)?.count || 0;
                 const isActive = pathname === label.href ||
-                  (pathname.startsWith('/labels/') && pathname.includes(label.gmailLabelId));
+                  (pathname && pathname.startsWith('/labels/') && pathname.includes(label.gmailLabelId));
 
                 return (
                   <div

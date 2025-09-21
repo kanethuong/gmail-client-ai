@@ -19,10 +19,10 @@ export default function LabelPage() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
-  const labelId = params.labelId as string;
+  const labelId = params?.labelId as string;
 
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const searchQuery = searchParams.get('search') || '';
+  const searchQuery = searchParams ? searchParams.get('search') || '' : '';
 
   // Debounce search query for real-time search
   useEffect(() => {
@@ -97,12 +97,12 @@ export default function LabelPage() {
     router.push(`/inbox/thread/${threadId}`);
   };
 
-  const labelName = LABEL_NAMES[labelId] || labelId;
+  const labelName = labelId && LABEL_NAMES[labelId] ? LABEL_NAMES[labelId] : labelId;
 
   if (threadsLoading && allThreads.length === 0) {
     return (
       <div className="flex items-center justify-center flex-1">
-        <div>Loading {labelName.toLowerCase()} threads...</div>
+        <div>Loading {labelName?.toLowerCase() || 'unknown'} threads...</div>
       </div>
     );
   }

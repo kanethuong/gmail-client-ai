@@ -1,7 +1,7 @@
-import cron from 'node-cron';
+import cron, { type ScheduledTask } from 'node-cron';
 
 class CronScheduler {
-  private scheduledTasks: Map<string, cron.ScheduledTask> = new Map();
+  private scheduledTasks: Map<string, ScheduledTask> = new Map();
 
   /**
    * Initialize scheduled sync cron job
@@ -19,7 +19,6 @@ class CronScheduler {
     const task = cron.schedule(cronExpression, async () => {
       await this.executeScheduledSync();
     }, {
-      scheduled: false, 
       timezone: 'UTC'
     });
 
@@ -89,7 +88,7 @@ class CronScheduler {
    * Stop all scheduled tasks
    */
   public stopAllTasks() {
-    for (const [taskName, task] of this.scheduledTasks.entries()) {
+    for (const [taskName, task] of Array.from(this.scheduledTasks.entries())) {
       task.stop();
       task.destroy();
       console.log(`[CronScheduler] Stopped task: ${taskName}`);
@@ -102,8 +101,8 @@ class CronScheduler {
    */
   public getTasksStatus() {
     const status: Record<string, boolean> = {};
-    for (const [taskName, task] of this.scheduledTasks.entries()) {
-      status[taskName] = task.running || false;
+    for (const [taskName] of Array.from(this.scheduledTasks.entries())) {
+      status[taskName] = true; // Task exists, so it's scheduled
     }
     return status;
   }

@@ -23,7 +23,7 @@ export function MessageBody({ messageId, bodyS3Key, snippet, className = "" }: M
       enabled: !!messageId,
       retry: 1,
       staleTime: 24 * 60 * 60 * 1000, // 24 hours
-      cacheTime: 7 * 24 * 60 * 60 * 1000, // 7 days
+      gcTime: 7 * 24 * 60 * 60 * 1000, // 7 days
       refetchOnWindowFocus: false,
       refetchOnMount: false,
     }

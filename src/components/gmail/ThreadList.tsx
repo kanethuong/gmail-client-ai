@@ -2,6 +2,7 @@ import { Star, Loader2 } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
 import { api } from "~/trpc/react";
 import { useEffect } from "react";
+import { useInView } from "react-intersection-observer";
 
 interface Thread {
   id: number;
@@ -68,6 +69,19 @@ export function ThreadList({
 }: ThreadListProps) {
   const utils = api.useUtils();
 
+  // Intersection observer for infinite scroll
+  const { ref: loadMoreRef, inView } = useInView({
+    threshold: 0,
+    rootMargin: '200px', // Trigger 200px before the element comes into view
+  });
+
+  // Trigger loading more when the sentinel comes into view
+  useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      onScrollReachEnd?.();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, onScrollReachEnd]);
+
   // Prefetch thread messages for visible threads
   useEffect(() => {
     const prefetchVisible = async () => {
@@ -96,17 +110,6 @@ export function ThreadList({
     }
   }, [threads, utils.gmail.getThreadMessages]);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    // Trigger load when user is within 200px of the bottom
-    const threshold = 200;
-    const isNearBottom = scrollTop + clientHeight >= scrollHeight - threshold;
-
-    if (isNearBottom && hasNextPage && !isFetchingNextPage) {
-      onScrollReachEnd?.();
-    }
-  };
-
   const getDisplayTitle = () => {
     if (searchQuery) {
       return `Search results for "${searchQuery}"`;
@@ -134,11 +137,7 @@ export function ThreadList({
         </div>
       </div>
 
-      <div
-        className="flex-1 overflow-y-auto"
-        onScroll={handleScroll}
-        style={{ height: 'calc(100vh - 200px)' }}
-      >
+      <div className="flex-1 overflow-y-auto">
         {threads.length === 0 && searchQuery && !isFetchingNextPage && (
           <div className="flex flex-col items-center justify-center p-8 text-center">
             <div className="text-muted-foreground mb-4 text-4xl">🔍</div>
@@ -218,13 +217,17 @@ export function ThreadList({
           </div>
         ))}
 
-        {/* Loading indicator for infinite scroll */}
-        {isFetchingNextPage && (
-          <div className="flex items-center justify-center p-4">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            <span className="ml-2 text-sm text-muted-foreground">
-              Loading more threads...
-            </span>
+        {/* Intersection observer sentinel for infinite scroll */}
+        {hasNextPage && (
+          <div ref={loadMoreRef} className="flex items-center justify-center p-4">
+            {isFetchingNextPage && (
+              <>
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span className="ml-2 text-sm text-muted-foreground">
+                  Loading more threads...
+                </span>
+              </>
+            )}
           </div>
         )}
 

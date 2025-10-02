@@ -87,7 +87,7 @@ export default function InboxPage() {
 
   if (threadsLoading && allThreads.length === 0) {
     return (
-      <div className="flex items-center justify-center flex-1">
+      <div className="flex items-center justify-center h-full">
         <div>Loading threads...</div>
       </div>
     );

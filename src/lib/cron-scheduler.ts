@@ -7,7 +7,7 @@ class CronScheduler {
    * Initialize scheduled sync cron job
    */
   public initializeScheduledSync() {
-    const cronExpression = process.env.SYNC_CRON_SCHEDULE || '*/30 * * * *'; // Default: every 30 minutes
+    const cronExpression = process.env.SYNC_CRON_SCHEDULE || '0 5 * * *';
     const taskName = 'scheduled-sync';
 
     console.log(`[CronScheduler] Initializing scheduled sync with cron: ${cronExpression}`);

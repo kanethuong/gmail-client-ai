@@ -204,7 +204,7 @@ export default function InboxLayout({ children }: InboxLayoutProps) {
         </div>
 
         {/* Page Content */}
-        <div>
+        <div className="flex-1">
           {children}
         </div>
       </div>

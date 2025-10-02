@@ -108,15 +108,7 @@ export default function LabelPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      {/* Header */}
-      {/* <div className="border-border border-b p-4">
-        <h1 className="text-lg font-semibold">{labelName}</h1>
-      </div> */}
-
-      {/* Thread List */}
-      <div className="flex-1">
-        <ThreadList
+    <ThreadList
           threads={allThreads}
           selectedLabel={labelId}
           labelsData={labelsData}
@@ -130,8 +122,6 @@ export default function LabelPage() {
           isFetchingNextPage={isFetchingNextPage}
           hasNextPage={hasNextPage}
           searchQuery={debouncedSearchQuery}
-        />
-      </div>
-    </div>
+    />
   );
 }

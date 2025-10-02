@@ -194,7 +194,7 @@ export default function ThreadPage() {
 
   if (messagesLoading) {
     return (
-      <div className="flex items-center justify-center flex-1">
+      <div className="flex items-center justify-center h-full">
         <div>Loading thread...</div>
       </div>
     );
@@ -202,14 +202,14 @@ export default function ThreadPage() {
 
   if (!threadMessages || typeof threadMessages !== 'object' || !('messages' in threadMessages) || !Array.isArray(threadMessages.messages)) {
     return (
-      <div className="flex items-center justify-center flex-1">
+      <div className="flex items-center justify-center h-full">
         <div>Thread not found</div>
       </div>
     );
   }
 
   return (
-    <>
+    <div className="h-full overflow-hidden">
       <ThreadView
         threadData={threadMessages as any}
         optimisticMessages={[]}
@@ -233,6 +233,6 @@ export default function ThreadPage() {
         onClose={handleCloseForward}
         isForwarding={forwardMutation.isPending}
       />
-    </>
+    </div>
   );
 }

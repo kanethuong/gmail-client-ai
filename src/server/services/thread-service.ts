@@ -164,10 +164,13 @@ export class ThreadService {
       };
     });
 
+    // Calculate if there are more pages available
+    const hasMorePages = userThreads.length === params.limit;
+    const nextCursor = hasMorePages ? offset + params.limit : null;
+
     return {
       threads: threadsWithCounts,
-      nextCursor:
-        userThreads.length === params.limit ? offset + params.limit : null,
+      nextCursor,
     };
   }
 
